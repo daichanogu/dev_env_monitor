@@ -30,7 +30,10 @@ DevEnvMonitorは、開発環境でのリソース使用状況とSQLクエリの�
 
 導入と使用方法
 
-1.	インストール: Gemfileにdev_env_monitorを追加し、bundle installを実行。
-2.	設定: config/environments/development.rbにrequire_relativeを追加して、DevEnvMonitorを初期化。
-3.	起動: ProcfileでLAUNCH_DEV_ENV_MONITOR環境変数を設定して、Foremanを使用して起動。
+1.	インストール: Gemfileにdev_env_monitorを追加
+    1. gem 'dev_env_monitor', git: 'https://github.com/daichanogu/dev_env_monitor'
+    2. bundle installを実行。
+2.	設定: config/environments/development.rbに下記を追加して、DevEnvMonitorを初期化。
+    1. require 'dev_env_monitor'
+3.	起動: ProcfileやRailsのenvファイルなどでLAUNCH_DEV_ENV_MONITOR環境変数をtrueに設定して、Foremanを使用して起動。
 4.	アクセス: ブラウザでhttp://localhost:4567にアクセスして、監視ダッシュボードを確認。
