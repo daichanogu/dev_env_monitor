@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DevEnvMonitor</title>
+  <link rel="stylesheet" type="text/css" href="/styles.css">
+  <script>
+document.addEventListener("DOMContentLoaded", function() {
+  const ws = new WebSocket(`ws://${window.location.host}/`);
+  ws.onopen = function() {
+    console.log('WebSocket connection opened');
+    ws.send('init'); // 初期メッセージの送信
+  };
+  ws.onmessage = function(event) {
+    console.log('Received data:', event.data);
+    if (event.data === 'Connected') return false;
+    try{
+      const data = JSON.parse(event.data);
+      console.log('Parsed data:', data);
+      let validData = false;
+
+      if (data.cpu_usage && data.memory_usage && data.disk_usage && data.process_info) {
+        validData = true;
+        document.getElementById('cpu-capacity').innerText = `${data.cpu_usage.capacity}%`;
+        document.getElementById('cpu-used').innerText = `${data.cpu_usage.used}%`;
+        document.getElementById('cpu-idle').innerText = `${data.cpu_usage.idle}%`;
+        document.getElementById('memory-total').innerText = `${data.memory_usage.total} GB`;
+        document.getElementById('memory-used').innerText = `${data.memory_usage.used} GB`;
+        document.getElementById('memory-free').innerText = `${data.memory_usage.free} GB`;
+        document.getElementById('disk-total').innerText = `${data.disk_usage.total} GB`;
+        document.getElementById('disk-used').innerText = `${data.disk_usage.used} GB`;
+        document.getElementById('disk-free').innerText = `${data.disk_usage.free} GB`;
+        document.getElementById('processes').innerHTML = data.process_info.map(p => `<li>${p.pid}: ${p.comm} - ${p.description}</li>`).join('');
+      }
+      if (data.sql_queries) {
+        validData = true;
+        document.getElementById('sql-queries').innerHTML = data.sql_queries.map(sql => formatSQLQuery(sql)).join('');
+        const sqlQueriesList = document.getElementById('sql-queries');
+        sqlQueriesList.scrollTop = sqlQueriesList.scrollHeight; // 最新のクエリに自動でスクロール
+      } else if (data.sql_query) {
+        validData = true;
+        const sqlQueriesList = document.getElementById('sql-queries');
+        newQuery = formatSQLQuery(data.sql_query);
+        sqlQueriesList.appendChild(newQuery);
+
+        while (sqlQueriesList.children.length > 100) {
+          sqlQueriesList.removeChild(sqlQueriesList.firstChild);
+        }
+        sqlQueriesList.scrollTop = sqlQueriesList.scrollHeight; // 最新のクエリに自動でスクロール
+      }
+      if (!validData) {
+        console.warn('Received unexpected data format:', data);
+      }
+    } catch (error) {
+      console.warn('Failed to parse received data:', error);
+    }
+  };
+  ws.onerror = function(error) {
+    console.error('WebSocket error:', error);
+  };
+  ws.onclose = function() {
+    console.log('WebSocket connection closed');
+  };
+
+
+  function formatSQLQuery(sql) {
+    return `
+      <div class="sql-query ${sql.cached ? 'cached' : ''}">
+        <div>
+          <span class="timestamp">${sql.timestamp}</span>
+          <span class="duration">${sql.cached ? 'CACHE ' : ''}${sql.duration}ms</span>
+          <pre class="sql">${sql.sql}</pre>
+          <span class="location">↳ ${sql.location}</span>
+        </div>
+      </div>
+    `;
+  }
+
+document.getElementById('toggle-fullscreen').addEventListener('click', function() {
+  const sqlQueriesList = document.getElementById('sql-queries');
+  const sqlArea = document.getElementById('sql-area');
+  if (sqlQueriesList.classList.contains('sql-queries-normal')) {
+    sqlQueriesList.classList.remove('sql-queries-normal');
+    sqlArea.classList.add('sql-area-fullscreen');
+    this.innerText = 'Collapse';
+    sqlArea.scrollTop = sqlArea.scrollHeight; // 最新のクエリに自動でスクロール
+  } else {
+    sqlArea.classList.remove('sql-area-fullscreen');
+    sqlQueriesList.classList.add('sql-queries-normal');
+    this.innerText = 'Expand';
+    sqlQueriesList.scrollTop = sqlQueriesList.scrollHeight; // 最新のクエリに自動でスクロール
+  }
+});
+});
+  </script>
+</head>
+<body>
+  <h1>DevEnvMonitor</h1>
+  <div class="container">
+    <div class="usage-processes">
+      <div class="usage">
+        <h2>Resource Usage</h2>
+        <table>
+          <tr>
+            <th>-</th>
+            <th>CPU Usage</th>
+            <th>Memory Usage</th>
+            <th>Disk Usage</th>
+          </tr>
+          <tr>
+            <td>Capacity</td>
+            <td id="cpu-capacity"></td>
+            <td id="memory-total"></td>
+            <td id="disk-total"></td>
+          </tr>
+          <tr>
+            <td>Used</td>
+            <td id="cpu-used"></td>
+            <td id="memory-used"></td>
+            <td id="disk-used"></td>
+          </tr>
+          <tr>
+            <td>Free</td>
+            <td id="cpu-idle"></td>
+            <td id="memory-free"></td>
+            <td id="disk-free"></td>
+          </tr>
+        </table>
+      </div>
+      <div class="processes">
+        <h2>Processes</h2>
+        <ul id="processes">
+          Loading Processes...
+        </ul>
+      </div>
+    </div>
+    <div id="sql-area" class="sql">
+      <h2 id="">Recent SQL Queries<button id="toggle-fullscreen">Expand</button></h2>
+      <div id="sql-queries" class="sql-queries-normal">
+        <!-- SQL Queries will be appended here -->
+      </div>
+    </div>
+  </div>
+  <footer>©️うお〜〜〜</footer>
+</body>
+</html>
