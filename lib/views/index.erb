@@ -34,15 +34,13 @@ document.addEventListener("DOMContentLoaded", function() {
       }
       if (data.sql_queries) {
         validData = true;
-        document.getElementById('sql-queries').innerHTML = data.sql_queries.map(sql => formatSQLQuery(sql)).join('');
         const sqlQueriesList = document.getElementById('sql-queries');
+        sqlQueriesList.innerHTML = data.sql_queries.map(sql => formatSQLQuery(sql)).join('');
         sqlQueriesList.scrollTop = sqlQueriesList.scrollHeight; // 最新のクエリに自動でスクロール
       } else if (data.sql_query) {
         validData = true;
         const sqlQueriesList = document.getElementById('sql-queries');
-        newQuery = formatSQLQuery(data.sql_query);
-        sqlQueriesList.appendChild(newQuery);
-
+        sqlQueriesList.innerHTML += formatSQLQuery(data.sql_query);
         while (sqlQueriesList.children.length > 100) {
           sqlQueriesList.removeChild(sqlQueriesList.firstChild);
         }
