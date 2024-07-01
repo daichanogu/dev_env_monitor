@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require 'dotenv/load'
+require 'byebug'
+require 'pry'
+require 'pry-byebug'
 require 'sinatra/base'
 require 'sinatra-websocket'
 require 'sys/proctable'
@@ -27,23 +31,32 @@ module DevEnvMonitor
     end
 
     def cpu_usage
-      load_avg = @cpu_info.load_avg
-      cpu_cores = `sysctl -n hw.ncpu`.to_i
-      used_percentage = ((load_avg[0] / cpu_cores) * 100).round(2)
-      idle_percentage = (100 - used_percentage).round(2)
-      { capacity: 100, used: used_percentage, idle: idle_percentage }
+      cpu_info = `top -l 1 -n 0 | grep 'CPU usage'`
+      cpu_user = cpu_info[/(\d+\.\d+)% user/, 1].to_f
+      cpu_sys = cpu_info[/(\d+\.\d+)% sys/, 1].to_f
+      cpu_idle = cpu_info[/(\d+\.\d+)% idle/, 1].to_f
+
+      used_percentage = cpu_user + cpu_sys
+      idle_percentage = cpu_idle
+
+      { capacity: 100, used: used_percentage.round(2), idle: idle_percentage.round(2) }
     end
 
     def memory_usage
       vm_stat = `vm_stat`
       pagesize = `sysctl -n hw.pagesize`.to_i
-      free_memory = vm_stat[/Pages free:\s+(\d+)/, 1].to_i * pagesize
-      active_memory = vm_stat[/Pages active:\s+(\d+)/, 1].to_i * pagesize
-      inactive_memory = vm_stat[/Pages inactive:\s+(\d+)/, 1].to_i * pagesize
-      wired_memory = vm_stat[/Pages wired down:\s+(\d+)/, 1].to_i * pagesize
-      used_memory = active_memory + inactive_memory + wired_memory
-      total_memory = used_memory + free_memory
-      { total: to_gb(total_memory), used: to_gb(used_memory), free: to_gb(free_memory) }
+      free_memory = vm_stat[/Pages free:\s+(\d+)/, 1].to_i * pagesize # free
+      speculative_memory = vm_stat[/Pages speculative:\s+(\d+)/, 1].to_i * pagesize # free, speculative
+      inactive_memory = vm_stat[/Pages inactive:\s+(\d+)/, 1].to_i * pagesize # used, file cache
+      active_memory = vm_stat[/Pages active:\s+(\d+)/, 1].to_i * pagesize # used, app_memory
+      wired_memory = vm_stat[/Pages wired down:\s+(\d+)/, 1].to_i * pagesize # used, wired
+      compressed_memory = vm_stat[/Pages occupied by compressor:\s+(\d+)/, 1].to_i * pagesize # used, compressed
+
+      used_memory = active_memory + inactive_memory + wired_memory + compressed_memory
+      free_memory_total = free_memory + speculative_memory
+      total_memory = used_memory + free_memory_total
+
+      { total: to_gb(total_memory), used: to_gb(used_memory), free: to_gb(free_memory_total) }
     end
 
     def disk_usage
@@ -98,6 +111,11 @@ module DevEnvMonitor
       }
     end
 
+    def debugging?
+      defined?(Pry) && Thread.list.any? { |thr| thr.backtrace&.any? { |line| line.include?('pry') } } ||
+      defined?(Byebug) && Thread.list.any? { |thr| thr.backtrace&.any? { |line| line.include?('byebug') } }
+    end
+
     private
 
     def setup_sql_capture
@@ -111,7 +129,9 @@ module DevEnvMonitor
       Thread.new do
         loop do
           sleep 3 # 3秒ごとに更新
-          EM.next_tick { broadcast_update }
+          unless debugging?
+            EM.next_tick { broadcast_update }
+          end
         end
       end
     end
@@ -156,9 +176,9 @@ module DevEnvMonitor
     end
 
     def notify_sql_query(sql)
-      puts "_________________________"
-      puts sql.to_json
-      DevEnvMonitor::WebApp.notify(sql.to_json)
+      unless debugging?
+        DevEnvMonitor::WebApp.notify(sql.to_json)
+      end
     end
 
     def to_gb(bytes)
@@ -183,13 +203,17 @@ module DevEnvMonitor
           end
 
           ws.onmessage do |msg|
-            puts "Received message: #{msg}"
+            # puts "Received message: #{msg}"
             monitor = DevEnvMonitor::Monitor.instance
-            data = monitor.monitor_all.to_json
-            puts "Sending data: #{data}"
-            EM.next_tick do
-              settings.sockets.each { |s| s.send(data) }
-              puts "Sent monitor data to WebSocket clients"
+            unless monitor.debugging?
+              data = monitor.monitor_all.to_json
+              # puts "Sending data: #{data}"
+              EM.next_tick do
+                settings.sockets.each { |s| s.send(data) }
+                puts "Sent monitor data to WebSocket clients"
+              end
+            else
+              puts "Debug session is active. Skipping sending monitor data to WebSocket clients"
             end
           end
 
@@ -212,7 +236,7 @@ module DevEnvMonitor
       Thread.new do
         WebApp.run! port: 4567, bind: '0.0.0.0'
       end
-      puts 'DevEnvMonitor is running. Open http://localhost:4567 in your browser.'
+      puts 'DevEnvMonitor is running. Open http://localhos:4567 in your browser.'
     else
       puts 'DevEnvMonitor cannot start because the LAUNCH_DEV_ENV_MONITOR environment variable is not set.'
     end
